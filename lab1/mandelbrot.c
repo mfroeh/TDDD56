@@ -45,6 +45,7 @@ struct mandelbrot_timing sequential;
 #endif
 #endif
 
+#if LOADBALANCE == 2
 typedef struct task_descriptor {
   int begin_h, end_h;
   void (*fun_ptr)(struct mandelbrot_param*);
@@ -53,6 +54,7 @@ typedef struct task_descriptor {
 static task_descriptor task_pool[HEIGHT];
 static int task_pool_counter = -1;
 static pthread_mutex_t task_pool_lock;
+#endif
 
 #ifdef MEASURE
 struct mandelbrot_timing **timing;
@@ -77,7 +79,7 @@ static int num_colors(struct mandelbrot_param *param) {
  */
 static int is_in_Mandelbrot(float Cre, float Cim, int maxiter) {
   int iter;
-  float x = 0.0, y = 0.0, xto2 = 0.0, yto2 = 0.0, dist2;
+  float x = 0.0, y = 0.0, xto2 = 0.0, yto2 = 0.0, dist2 = 0.0;
 
   for (iter = 0; dist2 < 4 && iter <= maxiter; iter++) {
     y = x * y;
@@ -182,15 +184,13 @@ void parallel_mandelbrot(struct mandelbrot_thread *args,
   // Only thread of ID 0 compute the whole picture
   parameters->begin_w = 0;
   parameters->end_w = parameters->width;
-  int counter = 0;
 
   while(1)
   {
-    //pthread_mutex_lock(&task_pool_lock);
-    counter = ++task_pool_counter;
-    //pthread_mutex_unlock(&task_pool_lock);
+    // This is awesome
+    int counter = __sync_add_and_fetch(&task_pool_counter, 1);
 
-    if(counter >= parameters->height){
+    if (counter >= parameters->height){
       break;
     }
     
