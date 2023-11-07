@@ -33,14 +33,6 @@ struct mandelbrot_thread {
 #endif
 };
 
-typedef struct task_descriptor {
-  int begin_h, end_h;
-  void (*fun_ptr)(struct mandelbrot_param*);
-} task_descriptor;
-
-static task_descriptor task_pool[HEIGHT];
-static int task_pool_counter = -1;
-static pthread_mutex_t task_pool_lock;
 
 int thread_stop;
 pthread_barrier_t thread_pool_barrier;
@@ -52,6 +44,15 @@ struct mandelbrot_thread thread_data[NB_THREADS];
 struct mandelbrot_timing sequential;
 #endif
 #endif
+
+typedef struct task_descriptor {
+  int begin_h, end_h;
+  void (*fun_ptr)(struct mandelbrot_param*);
+} task_descriptor;
+
+static task_descriptor task_pool[HEIGHT];
+static int task_pool_counter = -1;
+static pthread_mutex_t task_pool_lock;
 
 #ifdef MEASURE
 struct mandelbrot_timing **timing;
@@ -162,42 +163,7 @@ void parallel_mandelbrot(struct mandelbrot_thread *args,
 #if LOADBALANCE == 1
   // Replace this code with your load-balanced smarter solution.
   // Only thread of ID 0 compute the whole picture
-  
-  for(int counter = args->id; counter < parameters->height; counter += NB_THREADS)
-  {
-      parameters->begin_h = counter;
-      parameters->end_h = counter+1;
-      // Entire width: from 0 to picture's width
-      parameters->begin_w = 0;
-      parameters->end_w = parameters->width;
-  
-      // Go
-      compute_chunk(parameters);
-  }
-#endif
-// Compiled only if LOADBALANCE = 2
-#if LOADBALANCE == 2
-  // *optional* replace this code with another load-balancing solution.
-  // Only thread of ID 0 compute the whole picture
-  
-  int counter = 0;
-  do{
-    pthread_mutex_lock(&task_pool_lock);
-    counter = ++task_pool_counter;
-    pthread_mutex_unlock(&task_pool_lock);
-    
-    if(counter < parameters->height)
-    {
-      task_descriptor task = task_pool[counter];
-      parameters->begin_h = task.begin_h;
-      parameters->end_h = task.end_h;
-      task.fun_ptr(parameters);
-    }
-    
-  }while(task_pool_counter < parameters->height);
-  
-  
-  
+
   for(int counter = args->id; counter < parameters->height; counter += NB_THREADS)
   {
     parameters->begin_h = counter;
@@ -209,20 +175,29 @@ void parallel_mandelbrot(struct mandelbrot_thread *args,
     // Go
     compute_chunk(parameters);
   }
-  
-  
-  
-  if (args->id == 0) {
-    // Define the region compute_chunk() has to compute
-    // Entire height: from 0 to picture's height
-    parameters->begin_h = 0;
-    parameters->end_h = parameters->height;
-    // Entire width: from 0 to picture's width
-    parameters->begin_w = 0;
-    parameters->end_w = parameters->width;
+#endif
+// Compiled only if LOADBALANCE = 2
+#if LOADBALANCE == 2
+  // *optional* replace this code with another load-balancing solution.
+  // Only thread of ID 0 compute the whole picture
+  parameters->begin_w = 0;
+  parameters->end_w = parameters->width;
+  int counter = 0;
 
-    // Go
-    compute_chunk(parameters);
+  while(1)
+  {
+    //pthread_mutex_lock(&task_pool_lock);
+    counter = ++task_pool_counter;
+    //pthread_mutex_unlock(&task_pool_lock);
+
+    if(counter >= parameters->height){
+      break;
+    }
+    
+    task_descriptor task = task_pool[counter];
+    parameters->begin_h = task.begin_h;
+    parameters->end_h = task.end_h;
+    task.fun_ptr(parameters);
   }
 #endif
 }
@@ -366,7 +341,6 @@ void init_mandelbrot(struct mandelbrot_param *param) {
 
   pthread_attr_t thread_attr;
   int i;
-
   // Initialise thread poll / master thread synchronisation
   pthread_barrier_init(&thread_pool_barrier, NULL, NB_THREADS + 1);
 
@@ -385,7 +359,6 @@ void init_mandelbrot(struct mandelbrot_param *param) {
   // Create a thread pool
   for (i = 0; i < NB_THREADS; i++) {
     thread_data[i].id = i;
-
 #ifdef MEASURE
     timing[i] = &thread_data[i].timing;
 #endif
