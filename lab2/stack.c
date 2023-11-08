@@ -50,8 +50,6 @@ stack_t* stack_alloc(){
   pthread_mutex_init(&stack->lock, NULL);
   stack->head = NULL;
   stack->size = 2;
-  
-
   return stack;
 }
 
