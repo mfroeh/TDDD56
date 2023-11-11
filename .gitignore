@@ -3,3 +3,4 @@
 mandelbrot-*
 .cache/
 compile_commands.json
+measurements/
