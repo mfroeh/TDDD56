@@ -102,16 +102,15 @@ void stack_push(stack_t *stack, int val) {
     new = old ? old->next : NULL;
   } while (cas(&stack->freelist, old, new) != old);
 
-  node_t *node = old;
+  node_t* node = old;
   if (!node)
     node = malloc(sizeof(node_t));
   node->val = val;
 
-  new = node;
   do {
     old = stack->head;
-    new->next = stack->head;
-  } while (cas(&stack->head, old, new) != old);
+    node->next = stack->head;
+  } while (cas(&stack->head, old, node) != old);
 
 #else
   /*** Optional ***/
@@ -130,7 +129,7 @@ int stack_pop(stack_t *stack) {
   pthread_mutex_lock(&stack->lock);
 
   node_t *old_head = stack->head;
-  if (old_head == NULL)
+  if (!old_head)
     printf("Head is NULL (will segfault)");
 
   // Pop from stack
@@ -143,7 +142,22 @@ int stack_pop(stack_t *stack) {
 
   pthread_mutex_unlock(&stack->lock);
 #elif NON_BLOCKING == 1
-  // Implement a harware CAS-based stack
+  node_t *old;
+  node_t *new;
+  do {
+    old = stack->head;
+    if (!old)
+      printf("Head is NULL (will segfault)");
+    new = old->next;
+  } while (cas(&stack->head, old, new) != old);
+
+  node_t* node = old;
+  val = node->val;
+
+  do {
+    old = stack->freelist;
+    node->next = stack->freelist;
+  } while (cas(&stack->freelist, old, node) != old);
 #else
   /*** Optional ***/
   // Implement a software CAS-based stack

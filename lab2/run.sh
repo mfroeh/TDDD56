@@ -5,7 +5,7 @@ if [ "$#" -ne 3 ]; then
     exit 1
 fi
 
-for index in {0..16}
+for index in {1..16}
 do
     echo "Iteration $index"
 
