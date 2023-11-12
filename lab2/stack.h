@@ -35,7 +35,7 @@ typedef struct node {
 typedef struct stack
 {
   node_t* head;
-  node_t* freelist;
+  node_t* free_front;
 #if NON_BLOCKING == 0
   pthread_mutex_t lock;
 #endif

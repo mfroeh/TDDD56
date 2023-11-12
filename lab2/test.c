@@ -22,6 +22,7 @@
  */
 
 #include <assert.h>
+#include <pthread.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -130,7 +131,11 @@ void test_setup() {
 }
 
 void test_teardown() {
-  stack_free(stack);
+  if (!stack_check(stack)) {
+    printf("Stack corrupt!");
+  } else {
+    stack_free(stack);
+  }
 }
 
 void test_finalize() {
@@ -163,12 +168,73 @@ int test_pop_safe() {
 // 3 Threads should be enough to raise and detect the ABA problem
 #define ABA_NB_THREADS 3
 
+pthread_barrier_t aba_barrier;
+
+#if NON_BLOCKING != 0
+void thread0() {
+  node_t *A = stack->head;
+  node_t *B = A->next;
+  pthread_barrier_wait(&aba_barrier); // Simulate interrupt
+  pthread_barrier_wait(&aba_barrier); // Simulate thread2 executes after thread1
+  pthread_barrier_wait(
+      &aba_barrier); // Simulate both thread1 and thread2 popped
+  pthread_barrier_wait(&aba_barrier); // Simulate thread1 reuses 'A' element
+
+  assert(cas(&stack->head, A, B) == A); // ABA: We successfully pop A
+  assert(stack->head == B);             // ABA: Stacks head points to B
+  assert(stack->free_front == B);       // ABA: Stacks freelist points to B
+}
+
+void thread1() {
+  pthread_barrier_wait(
+      &aba_barrier); // Simulate begin execution after thread0 interrupt
+  stack_pop(stack);  // Pops A
+  pthread_barrier_wait(&aba_barrier); // Simulate thread2 executes after thread1
+  pthread_barrier_wait(
+      &aba_barrier);      // Simulate both thread1 and thread2 popped
+  stack_push(stack, 'D'); // Push reused 'A' element
+  pthread_barrier_wait(&aba_barrier); // Simulate thread1 reuses 'A' element
+}
+
+void thread2() {
+  pthread_barrier_wait(
+      &aba_barrier); // Simulate begin execution after thread0 interrupt
+  pthread_barrier_wait(&aba_barrier); // Simulate thread2 executes after thread1
+  stack_pop(stack);                   // Pops B
+  pthread_barrier_wait(
+      &aba_barrier); // Simulate both thread1 and thread 2 popped
+  pthread_barrier_wait(&aba_barrier); // Simulate thread1 reuses 'A' element
+}
+#endif
+
 int test_aba() {
 #if NON_BLOCKING == 1 || NON_BLOCKING == 2
-  int success, aba_detected = 0;
-  // Write here a test for the ABA problem
-  success = aba_detected;
-  return success;
+  stack_free(stack);
+  stack = stack_alloc();
+  stack_push(stack, 'C');
+  stack_push(stack, 'B');
+  stack_push(stack, 'A');
+
+  assert(pthread_barrier_init(&aba_barrier, NULL, 3) == 0);
+
+  pthread_attr_t attr;
+  pthread_attr_init(&attr);
+
+  pthread_t thread_0;
+  pthread_create(&thread_0, &attr, thread0, NULL);
+
+  pthread_t thread_1;
+  pthread_create(&thread_1, &attr, thread1, NULL);
+
+  pthread_t thread_2;
+  pthread_create(&thread_2, &attr, thread2, NULL);
+
+  pthread_join(thread_0, NULL);
+  pthread_join(thread_1, NULL);
+  pthread_join(thread_2, NULL);
+
+  // We assert that ABA occurs inside of thread0 func
+  return 1;
 #else
   // No ABA is possible with lock-based synchronization. Let the test succeed
   // only

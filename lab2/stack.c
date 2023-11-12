@@ -51,7 +51,7 @@ stack_t *stack_alloc() {
   pthread_mutex_init(&stack->lock, NULL);
 #endif
   stack->head = NULL;
-  stack->freelist = NULL;
+  stack->free_front = NULL;
   return stack;
 }
 
@@ -65,9 +65,9 @@ int stack_check(stack_t *stack) {
   // (Yes this is N^2 sorry)
   node_t *node = stack->head;
   while (node) {
-    node_t *free_node = stack->freelist;
+    node_t *free_node = stack->free_front;
     while (free_node) {
-      assert(node != free_node);
+      if (node == free_node) return 0;
       free_node = free_node->next;
     }
     node = node->next;
@@ -82,9 +82,9 @@ void stack_push(stack_t *stack, int val) {
 #if NON_BLOCKING == 0
   pthread_mutex_lock(&stack->lock);
 
-  node_t *node = stack->freelist;
+  node_t *node = stack->free_front;
   if (node) {
-    stack->freelist->next = node->next;
+    stack->free_front = node->next;
   } else {
     node = malloc(sizeof(node_t));
   }
@@ -98,9 +98,9 @@ void stack_push(stack_t *stack, int val) {
   node_t *old;
   node_t *new;
   do {
-    old = stack->freelist;
+    old = stack->free_front;
     new = old ? old->next : NULL;
-  } while (cas(&stack->freelist, old, new) != old);
+  } while (cas(&stack->free_front, old, new) != old);
 
   node_t* node = old;
   if (!node)
@@ -109,7 +109,7 @@ void stack_push(stack_t *stack, int val) {
 
   do {
     old = stack->head;
-    node->next = stack->head;
+    node->next = old;
   } while (cas(&stack->head, old, node) != old);
 
 #else
@@ -136,9 +136,18 @@ int stack_pop(stack_t *stack) {
   val = old_head->val;
   stack->head = old_head->next;
 
-  // Push on freelist
-  old_head->next = stack->freelist;
-  stack->freelist = old_head;
+  // Append to freelist
+  old_head->next = NULL;
+
+  node_t* free_last = stack->free_front;
+  if (!free_last) {
+    stack->free_front = old_head;
+  } else {
+    while (free_last->next) {
+      free_last = free_last->next;
+    }
+    free_last->next = old_head;
+  }
 
   pthread_mutex_unlock(&stack->lock);
 #elif NON_BLOCKING == 1
@@ -152,12 +161,25 @@ int stack_pop(stack_t *stack) {
   } while (cas(&stack->head, old, new) != old);
 
   node_t* node = old;
+  node->next = NULL;
   val = node->val;
 
+  void** ptr = NULL;
+  // Append to freelist
   do {
-    old = stack->freelist;
-    node->next = stack->freelist;
-  } while (cas(&stack->freelist, old, node) != old);
+      node_t* free_last = stack->free_front;
+      if (!free_last) {
+        ptr = &stack->free_front;
+      } else {
+        while (free_last && free_last->next) {
+          free_last = free_last->next;
+        }
+        ptr = &free_last->next;
+      }
+
+      old = free_last ? free_last->next : NULL;
+      new = node;
+  } while (cas(ptr, old, new) != old);
 #else
   /*** Optional ***/
   // Implement a software CAS-based stack
@@ -182,7 +204,7 @@ void stack_free(stack_t *stack) {
   }
 
   // Free the freelist
-  node = stack->freelist;
+  node = stack->free_front;
   while (node != NULL) {
     node_t* tmp = node;
     node = tmp->next;

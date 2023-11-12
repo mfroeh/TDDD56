@@ -13,6 +13,7 @@ do
     make NB_THREADS=$index MEASURE=$1 NON_BLOCKING=$2 MAX_PUSH_POP=$3
 
     output=$(./stack)
+    echo "$output" | grep "Thread"
     max_time=$(echo "$output" | grep "Thread" | awk '{print $4}' | sort -n | tail -n 1)
     output_data+=("$max_time")
 
