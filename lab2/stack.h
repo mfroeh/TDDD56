@@ -42,7 +42,6 @@ typedef struct stack
   size_t blocks_cap;
   node_t** blocks;
   pthread_mutex_t free_lock;
-  int aba;
 #if NON_BLOCKING == 0
   pthread_mutex_t stack_lock;
 #endif

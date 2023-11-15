@@ -78,7 +78,7 @@ int stack_check(stack_t *stack) {
 
 node_t* stack_get_node(stack_t* stack) {
   pthread_mutex_lock(&stack->free_lock);
-  size_t blockidx = (stack->n + stack->aba) / BLOCK_SIZE;
+  size_t blockidx = stack->n / BLOCK_SIZE;
   if (blockidx > stack->blocks_size) {
     if (blockidx > stack->blocks_cap) {
       stack->blocks = realloc(stack->blocks, stack->blocks_cap * 2);
@@ -87,7 +87,7 @@ node_t* stack_get_node(stack_t* stack) {
     stack->blocks[blockidx] = calloc(BLOCK_SIZE, sizeof(node_t));
     stack->blocks_size++;
   }
-  size_t elemidx = (stack->n + stack->aba) % BLOCK_SIZE;
+  size_t elemidx = stack->n % BLOCK_SIZE;
   node_t* node = &stack->blocks[blockidx][elemidx];
   stack->n++;
   pthread_mutex_unlock(&stack->free_lock);
@@ -112,15 +112,8 @@ void stack_push(stack_t *stack, int val) {
     old = stack->head;
     node->next = old;
   } while (cas(&stack->head, old, node) != old);
-
-#else
-  /*** Optional ***/
-  // Implement a software CAS-based stack
 #endif
 
-  // Debug practice: you can check if this operation results in a stack in a
-  // consistent check It doesn't harm performance as sanity check are disabled
-  // at measurement time This is to be updated as your implementation progresses
   stack_check(stack);
 }
 
@@ -160,9 +153,6 @@ int stack_pop(stack_t *stack) {
   pthread_mutex_lock(&stack->free_lock);
   stack->n--;
   pthread_mutex_unlock(&stack->free_lock);
-#else
-  /*** Optional ***/
-  // Implement a software CAS-based stack
 #endif
 
   stack_check(stack);
@@ -173,24 +163,17 @@ int stack_pop(stack_t *stack) {
 void stack_print(stack_t* stack) {
   printf("Stack: ");
   node_t* node = stack->head;
-  void* addr = &stack->head;
   while (node) {
-    printf("[%c, %p] -> %p ", node->val, addr, node->next);
-    addr = &*node->next;
+    printf("[%c, %p] -> %p ", node->val, node, node->next);
     node = node->next;
   }
   printf("\n");
 }
 
 void stack_free(stack_t *stack) {
-  // Free the stack
-  // node_t *node = stack->head;
-  // while (node != NULL) {
-  //   node_t* tmp = node;
-  //   node = tmp->next;
-  //   free(tmp);
-  // }
-
-  // TODO: Free the freelist
+  for (int i = 0; i < stack->blocks_size; ++i) {
+    free(stack->blocks[i]);
+  }
+  free(stack->blocks);
   free(stack);
 }

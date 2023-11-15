@@ -131,11 +131,7 @@ void test_setup() {
 }
 
 void test_teardown() {
-  if (!stack_check(stack)) {
-    printf("Stack corrupt!");
-  } else {
-    stack_free(stack);
-  }
+  stack_free(stack);
 }
 
 void test_finalize() {
@@ -186,7 +182,7 @@ void thread0() {
   stack_print(stack);
   stack->n--;
   assert(stack->head == B);             // ABA: Stacks head points to B
-  assert(&stack->blocks[stack->n / BLOCK_SIZE][stack->n % BLOCK_SIZE] == B) // First element in the freelist is B
+  assert(&stack->blocks[stack->n / BLOCK_SIZE][stack->n % BLOCK_SIZE] == B); // First element in the freelist is B
   // Both stack and freelist "point" to B!
   return 1;
 }
@@ -198,13 +194,13 @@ void thread1() {
   pthread_barrier_wait(&aba_barrier); // Simulate thread2 executes after thread1
   pthread_barrier_wait(
       &aba_barrier);      // Simulate both thread1 and thread2 popped
-  stack->aba++;
+  // stack->aba++;
   printf("Before thread 1 reuse A\n");
   stack_print(stack);
   stack_push(stack, 'D'); // Push reused 'A' element
   printf("After thread 1 reuse A\n");
   stack_print(stack);
-  stack->aba--;
+  // stack->aba--;
   pthread_barrier_wait(&aba_barrier); // Simulate thread1 reuses 'A' element
 }
 
