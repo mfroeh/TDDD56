@@ -26,3 +26,5 @@ printf "MEASURE: $1, NON_BLOCKING = $2, MAX_PUSH_POP = $3\n" > $filename
 printf '%s\n' "${output_data[@]}" >> $filename
 
 printf "$filename"
+
+cat $filename

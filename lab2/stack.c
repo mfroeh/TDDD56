@@ -46,12 +46,15 @@
 #endif
 
 stack_t *stack_alloc() {
-  stack_t *stack = malloc(sizeof(stack_t));
+  stack_t *stack = calloc(1, sizeof(stack_t));
 #if NON_BLOCKING == 0
-  pthread_mutex_init(&stack->lock, NULL);
+  pthread_mutex_init(&stack->stack_lock, NULL);
 #endif
-  stack->head = NULL;
-  stack->free_front = NULL;
+  pthread_mutex_init(&stack->free_lock, NULL);
+  stack->blocks = calloc(100, sizeof(node_t*));
+  stack->blocks_cap = 100;
+  stack->blocks[0] = calloc(BLOCK_SIZE, sizeof(node_t));
+  stack->blocks_size = 1;
   return stack;
 }
 
@@ -62,14 +65,9 @@ int stack_check(stack_t *stack) {
   assert(stack != NULL);
 
 #if NON_BLOCKING != 0
-  // (Yes this is N^2 sorry)
   node_t *node = stack->head;
   while (node) {
-    node_t *free_node = stack->free_front;
-    while (free_node) {
-      if (node == free_node) return 0;
-      free_node = free_node->next;
-    }
+    assert(node != node->next);
     node = node->next;
   }
 #endif
@@ -78,35 +76,38 @@ int stack_check(stack_t *stack) {
   return 1;
 }
 
+node_t* stack_get_node(stack_t* stack) {
+  pthread_mutex_lock(&stack->free_lock);
+  size_t blockidx = (stack->n + stack->aba) / BLOCK_SIZE;
+  if (blockidx > stack->blocks_size) {
+    if (blockidx > stack->blocks_cap) {
+      stack->blocks = realloc(stack->blocks, stack->blocks_cap * 2);
+      stack->blocks_cap = stack->blocks_cap * 2;
+    }
+    stack->blocks[blockidx] = calloc(BLOCK_SIZE, sizeof(node_t));
+    stack->blocks_size++;
+  }
+  size_t elemidx = (stack->n + stack->aba) % BLOCK_SIZE;
+  node_t* node = &stack->blocks[blockidx][elemidx];
+  stack->n++;
+  pthread_mutex_unlock(&stack->free_lock);
+  return node;
+}
+
 void stack_push(stack_t *stack, int val) {
 #if NON_BLOCKING == 0
-  pthread_mutex_lock(&stack->lock);
-
-  node_t *node = stack->free_front;
-  if (node) {
-    stack->free_front = node->next;
-  } else {
-    node = malloc(sizeof(node_t));
-  }
-
+  node_t* node = stack_get_node(stack);
   node->val = val;
+
+  pthread_mutex_lock(&stack->stack_lock);
   node->next = stack->head;
   stack->head = node;
-
-  pthread_mutex_unlock(&stack->lock);
+  pthread_mutex_unlock(&stack->stack_lock);
 #elif NON_BLOCKING == 1
-  node_t *old;
-  node_t *new;
-  do {
-    old = stack->free_front;
-    new = old ? old->next : NULL;
-  } while (cas(&stack->free_front, old, new) != old);
-
-  node_t* node = old;
-  if (!node)
-    node = malloc(sizeof(node_t));
+  node_t* node = stack_get_node(stack);
   node->val = val;
 
+  node_t* old;
   do {
     old = stack->head;
     node->next = old;
@@ -126,30 +127,25 @@ void stack_push(stack_t *stack, int val) {
 int stack_pop(stack_t *stack) {
   int val;
 #if NON_BLOCKING == 0
-  pthread_mutex_lock(&stack->lock);
-
+  pthread_mutex_lock(&stack->stack_lock);
   node_t *old_head = stack->head;
-  if (!old_head)
-    printf("Head is NULL (will segfault)");
 
-  // Pop from stack
-  val = old_head->val;
-  stack->head = old_head->next;
-
-  // Append to freelist
-  old_head->next = NULL;
-
-  node_t* free_last = stack->free_front;
-  if (!free_last) {
-    stack->free_front = old_head;
-  } else {
-    while (free_last->next) {
-      free_last = free_last->next;
-    }
-    free_last->next = old_head;
+  if (old_head) {
+    pthread_mutex_unlock(&stack->stack_lock);
+    printf("pop from empty stack");
+    return -1;
   }
 
-  pthread_mutex_unlock(&stack->lock);
+  // Pop from stack
+  stack->head = old_head->next;
+  pthread_mutex_unlock(&stack->stack_lock);
+
+  val = old_head->val;
+  old_head->next = NULL;
+
+  pthread_mutex_lock(&stack->free_lock);
+  stack->n--;
+  pthread_mutex_unlock(&stack->free_lock);
 #elif NON_BLOCKING == 1
   node_t *old;
   node_t *new;
@@ -159,27 +155,11 @@ int stack_pop(stack_t *stack) {
       printf("Head is NULL (will segfault)");
     new = old->next;
   } while (cas(&stack->head, old, new) != old);
+  old->next = NULL;
 
-  node_t* node = old;
-  node->next = NULL;
-  val = node->val;
-
-  void** ptr = NULL;
-  // Append to freelist
-  do {
-      node_t* free_last = stack->free_front;
-      if (!free_last) {
-        ptr = &stack->free_front;
-      } else {
-        while (free_last && free_last->next) {
-          free_last = free_last->next;
-        }
-        ptr = &free_last->next;
-      }
-
-      old = free_last ? free_last->next : NULL;
-      new = node;
-  } while (cas(ptr, old, new) != old);
+  pthread_mutex_lock(&stack->free_lock);
+  stack->n--;
+  pthread_mutex_unlock(&stack->free_lock);
 #else
   /*** Optional ***/
   // Implement a software CAS-based stack
@@ -190,30 +170,27 @@ int stack_pop(stack_t *stack) {
   return val;
 }
 
+void stack_print(stack_t* stack) {
+  printf("Stack: ");
+  node_t* node = stack->head;
+  void* addr = &stack->head;
+  while (node) {
+    printf("[%c, %p] -> %p ", node->val, addr, node->next);
+    addr = &*node->next;
+    node = node->next;
+  }
+  printf("\n");
+}
+
 void stack_free(stack_t *stack) {
-#if NON_BLOCKING == 0
-  pthread_mutex_lock(&stack->lock);
-#endif
-
   // Free the stack
-  node_t *node = stack->head;
-  while (node != NULL) {
-    node_t* tmp = node;
-    node = tmp->next;
-    free(tmp);
-  }
+  // node_t *node = stack->head;
+  // while (node != NULL) {
+  //   node_t* tmp = node;
+  //   node = tmp->next;
+  //   free(tmp);
+  // }
 
-  // Free the freelist
-  node = stack->free_front;
-  while (node != NULL) {
-    node_t* tmp = node;
-    node = tmp->next;
-    free(tmp);
-  }
-
-#if NON_BLOCKING == 0
-  pthread_mutex_unlock(&stack->lock);
-#endif
-
+  // TODO: Free the freelist
   free(stack);
 }

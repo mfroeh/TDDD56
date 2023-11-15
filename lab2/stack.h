@@ -27,6 +27,8 @@
 #ifndef STACK_H
 #define STACK_H
 
+#define BLOCK_SIZE 100
+
 typedef struct node {
   int val;
   struct node* next;
@@ -35,17 +37,24 @@ typedef struct node {
 typedef struct stack
 {
   node_t* head;
-  node_t* free_front;
+  size_t n;
+  size_t blocks_size;
+  size_t blocks_cap;
+  node_t** blocks;
+  pthread_mutex_t free_lock;
+  int aba;
 #if NON_BLOCKING == 0
-  pthread_mutex_t lock;
+  pthread_mutex_t stack_lock;
 #endif
 } stack_t;
 
 
 stack_t* stack_alloc();
+node_t* stack_get_node(stack_t* stack);
 void stack_push(stack_t* stack, int val);
 int stack_pop(stack_t* stack);
 void stack_free(stack_t* stack);
+void stack_print(stack_t* stack);
 
 /* Use this to check if your stack is in a consistent state from time to time */
 int stack_check(stack_t *stack);
