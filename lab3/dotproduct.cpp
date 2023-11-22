@@ -10,19 +10,20 @@
 
 #include <skepu>
 
-/* SkePU user functions */
+float add(float lhs, float rhs) { return lhs + rhs; }
+float mul(float lhs, float rhs) { return lhs * rhs; }
 
+<<<<<<< HEAD
 float multiply(float x, float y) { return x * y; }
 
 float sum(float x, float y) { return x + y; }
-
-// more user functions...
-
-int main(int argc, const char *argv[]) {
+=======
+int main(int argc, const char* argv[]) {
   if (argc < 2) {
     std::cout << "Usage: " << argv[0] << " <input size> <backend>\n";
     exit(1);
   }
+>>>>>>> 29ce113... Dotproduct mo
 
   const size_t size = std::stoul(argv[1]);
   auto spec = skepu::BackendSpec{argv[2]};
@@ -30,28 +31,38 @@ int main(int argc, const char *argv[]) {
   skepu::setGlobalBackendSpec(spec);
 
   /* Skeleton instances */
-  auto mapInstance = skepu::Map<2>(multiply);
-  auto reduceInstance = skepu::Reduce(sum);
-  auto mapReduceInstance = skepu::MapReduce<2>(multiply, sum);
+  auto map{skepu::Map<2>(mul)};
+  auto reduce{skepu::Reduce(add)};
+  auto mapreduce{skepu::MapReduce<2>(mul, add)};
 
   /* SkePU containers */
-  skepu::Vector<float> v1(size, 1.0f), v2(size, 2.0f), vMapRes(size);
+  skepu::Vector<float> v1(size, 1.0f), v2(size, 2.0f);
 
   /* Compute and measure time */
   float resComb, resSep;
-
-  auto timeComb = skepu::benchmark::measureExecTime([&] {
-    resComb = mapReduceInstance(v1, v2);
-  });
+  auto timeComb = skepu::benchmark::measureExecTime([&] { resComb = mapreduce(v1, v2); });
 
   auto timeSep = skepu::benchmark::measureExecTime([&] {
-    // your code here
-    mapInstance(vMapRes, v1, v2);
-    resSep = reduceInstance(vMapRes);
+    skepu::Vector<float> mapres(v1.size());
+    map(mapres, v1, v2);
+    resSep = reduce(mapres);
+  });
+
+  auto timeCombCold = skepu::benchmark::measureExecTimeIdempotent([&] {
+	resComb = mapreduce(v1, v2); 
+  });
+
+  auto timeSepCold = skepu::benchmark::measureExecTimeIdempotent([&] {
+    skepu::Vector<float> mapres(v1.size());
+    map(mapres, v1, v2);
+    resSep = reduce(mapres);
   });
 
   std::cout << "Time Combined: " << (timeComb.count() / 10E6) << " seconds.\n";
   std::cout << "Time Separate: " << (timeSep.count() / 10E6) << " seconds.\n";
+
+  std::cout << "Time Combined (cold run): " << (timeCombCold.count() / 10E6) << " seconds.\n";
+  std::cout << "Time Separate (cold run): " << (timeSepCold.count() / 10E6) << " seconds.\n";
 
   std::cout << "Result Combined: " << resComb << "\n";
   std::cout << "Result Separate: " << resSep << "\n";
