@@ -16,11 +16,10 @@
 
 #include "support.h"
 
-
 unsigned char median_kernel(skepu::Region2D<unsigned char> image, size_t elemPerPx)
 {
 	// For radius = 25 create a 1D array for sorting with values from the image
-	unsigned char values[2601];
+	unsigned char values[(25 * 2 + 1) * (25 * 2 + 1)];
 	int index = 0;
 	for (int y = -image.oi; y <= image.oi; ++y){
 		for (int x = -image.oj; x <= image.oj; x += elemPerPx){
@@ -29,17 +28,16 @@ unsigned char median_kernel(skepu::Region2D<unsigned char> image, size_t elemPer
 		}
 	}
 
-
-	 int i, j, minimumIndex;
- 
+	int size = index;
+	int i, j, minimumIndex;
     // One by one move boundary of
     // unsorted subarray
-    for (i = 0; i < index - 1; i++) {
+    for (i = 0; i < size - 1; i++) {
  
         // Find the minimum element in
         // unsorted array
         minimumIndex = i;
-        for (j = i + 1; j < index; j++) {
+        for (j = i + 1; j < size; j++) {
             if (values[j] < values[minimumIndex])
                 minimumIndex = j;
         }
@@ -56,8 +54,6 @@ unsigned char median_kernel(skepu::Region2D<unsigned char> image, size_t elemPer
 	return values[(index-1)/2];
 }
 
-
-
 int main(int argc, char* argv[])
 {
 	LodePNGColorType colorType = LCT_RGB;
@@ -72,7 +68,7 @@ int main(int argc, char* argv[])
 	std::string outputFileName = argv[2];
 	const int radius = atoi(argv[3]);
 	auto spec = skepu::BackendSpec{argv[4]};
-	spec.setCPUThreads(16);
+	// spec.setCPUThreads(16);
 	skepu::setGlobalBackendSpec(spec);
 	
 	// Create the full path for writing the image.

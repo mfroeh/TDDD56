@@ -28,11 +28,10 @@ unsigned char average_kernel(skepu::Region2D<unsigned char> m, size_t elemPerPx)
 
 unsigned char average_kernel_1d(skepu::Region1D<unsigned char> m, size_t elemPerPx)
 {
-	float scaling = 1.0 / (m.oi / elemPerPx * 2 + 1);
     float res = 0;
     for (int i = -m.oi; i < m.oi; i += elemPerPx)
         res += m(i);
-    return res * scaling;
+    return res / (m.oi/elemPerPx * 2 + 1);
 }
 
 
@@ -106,18 +105,17 @@ int main(int argc, char* argv[])
 		auto convR = skepu::MapOverlap(average_kernel_1d);
 		convR.setOverlapMode(skepu::Overlap::RowWise);
 		convR.setOverlap(radius * imageInfo.elementsPerPixel);
-
-		auto convC = skepu::MapOverlap(average_kernel_1d);
-		convC.setOverlapMode(skepu::Overlap::ColWise);
-		convC.setOverlap(radius);
+		
 		
 		auto timeTaken = skepu::benchmark::measureExecTime([&]
 		{
 			// Apply the 1D average filter row-wise
 			convR(intermediaryMatrix, inputMatrix, imageInfo.elementsPerPixel);
+			convR.setOverlapMode(skepu::Overlap::ColWise);
+			convR.setOverlap(radius);
 
         	// Apply the 1D average filter column-wise
-        	convC(outputMatrixAverage1D, intermediaryMatrix, 1);
+        	convR(outputMatrixAverage1D, intermediaryMatrix, 1);
 	
 		});
 		
@@ -132,9 +130,7 @@ int main(int argc, char* argv[])
 		convGausR.setOverlapMode(skepu::Overlap::RowWise);
 		convGausR.setOverlap(radius * imageInfo.elementsPerPixel);
 
-		auto convGausC = skepu::MapOverlap(gaussian_kernel);
-		convGausC.setOverlapMode(skepu::Overlap::ColWise);
-		convGausC.setOverlap(radius);
+		
 			
 		// skeleton instance, etc here (remember to set backend)
 	
@@ -142,9 +138,11 @@ int main(int argc, char* argv[])
 		{
 			// Apply the 1D average filter row-wise
 			convGausR(intermediaryMatrix, inputMatrix, stencil, imageInfo.elementsPerPixel);
+			convGausR.setOverlapMode(skepu::Overlap::ColWise);
+			convGausR.setOverlap(radius);
 
         	// Apply the 1D average filter column-wise
-        	convGausC(outputMatrixGausian, intermediaryMatrix, stencil, 1);
+        	convGausR(outputMatrixGausian, intermediaryMatrix, stencil, 1);
 		});
 	
 		WritePngFileMatrix(outputMatrixGausian, outputFile + "-gaussian.png", colorType, imageInfo);
