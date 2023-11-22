@@ -18,40 +18,31 @@
 
 unsigned char median_kernel(skepu::Region2D<unsigned char> image, size_t elemPerPx)
 {
-	// For radius = 25 create a 1D array for sorting with values from the image
-	unsigned char values[(25 * 2 + 1) * (25 * 2 + 1)];
-	int index = 0;
+	int counts[256];
+	for (int i = 0; i < 256; ++i) {
+		counts[i] = 0;
+	}
+
+	// No data dependency, this is trivially parallelizable!
 	for (int y = -image.oi; y <= image.oi; ++y){
 		for (int x = -image.oj; x <= image.oj; x += elemPerPx){
-			values[index] = image(y, x);
-			index++;
+			counts[image(y, x)]++;
 		}
 	}
 
-	int size = index;
-	int i, j, minimumIndex;
-    // One by one move boundary of
-    // unsorted subarray
-    for (i = 0; i < size - 1; i++) {
- 
-        // Find the minimum element in
-        // unsorted array
-        minimumIndex = i;
-        for (j = i + 1; j < size; j++) {
-            if (values[j] < values[minimumIndex])
-                minimumIndex = j;
-        }
- 
-        // Swap the found minimum element
-        // with the first element
-        if (minimumIndex != i){
-			int temp = values[minimumIndex];
-			values[minimumIndex] = values[i];
-			values[i] = temp;
-		}
-    }
+	// Number of r|b|g values to find the median in
+	int n = (image.oi * 2 + 1) * (image.oj / elemPerPx * 2 + 1);
 
-	return values[(index-1)/2];
+	// Data dependency here, can't parallelize!
+	int acc = 0;
+	for (unsigned i = 0; i < 256; ++i) {
+		acc += counts[i];
+		if (acc >= ((n-1)/2)) {
+			return i;
+		}
+	}
+	// This should never happen, and if so we can observe that the image is black
+	return 0;
 }
 
 int main(int argc, char* argv[])

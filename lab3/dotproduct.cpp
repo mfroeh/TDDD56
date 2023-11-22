@@ -43,7 +43,7 @@ int main(int argc, const char* argv[]) {
   });
 
   auto timeCombCold = skepu::benchmark::measureExecTimeIdempotent([&] {
-	resComb = mapreduce(v1, v2); 
+	  resComb = mapreduce(v1, v2); 
   });
 
   auto timeSepCold = skepu::benchmark::measureExecTimeIdempotent([&] {
@@ -52,11 +52,11 @@ int main(int argc, const char* argv[]) {
     resSep = reduce(mapres);
   });
 
-  std::cout << "Time Combined: " << (timeComb.count() / 10E6) << " seconds.\n";
-  std::cout << "Time Separate: " << (timeSep.count() / 10E6) << " seconds.\n";
+  std::cout << "Time Combined (cold run): " << (timeComb.count() / 10E6) << " seconds.\n";
+  std::cout << "Time Separate (cold run): " << (timeSep.count() / 10E6) << " seconds.\n";
 
-  std::cout << "Time Combined (cold run): " << (timeCombCold.count() / 10E6) << " seconds.\n";
-  std::cout << "Time Separate (cold run): " << (timeSepCold.count() / 10E6) << " seconds.\n";
+  std::cout << "Time Combined: " << (timeCombCold.count() / 10E6) << " seconds.\n";
+  std::cout << "Time Separate: " << (timeSepCold.count() / 10E6) << " seconds.\n";
 
   std::cout << "Result Combined: " << resComb << "\n";
   std::cout << "Result Separate: " << resSep << "\n";
