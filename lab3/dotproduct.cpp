@@ -13,17 +13,11 @@
 float add(float lhs, float rhs) { return lhs + rhs; }
 float mul(float lhs, float rhs) { return lhs * rhs; }
 
-<<<<<<< HEAD
-float multiply(float x, float y) { return x * y; }
-
-float sum(float x, float y) { return x + y; }
-=======
 int main(int argc, const char* argv[]) {
   if (argc < 2) {
     std::cout << "Usage: " << argv[0] << " <input size> <backend>\n";
     exit(1);
   }
->>>>>>> 29ce113... Dotproduct mo
 
   const size_t size = std::stoul(argv[1]);
   auto spec = skepu::BackendSpec{argv[2]};
