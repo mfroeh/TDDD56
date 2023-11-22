@@ -26,6 +26,7 @@ int main(int argc, const char* argv[])
 	
 	const size_t size = std::stoul(argv[1]);
 	auto spec = skepu::BackendSpec{argv[2]};
+	spec.setCPUThreads(16);
 	skepu::setGlobalBackendSpec(spec);
 	
 	/* Skeleton instances */
@@ -33,7 +34,7 @@ int main(int argc, const char* argv[])
 	
 	/* SkePU containers */
 	skepu::Vector<float> input(size), res(size);
-//	input.randomize(0, 9);
+	input.randomize(0, 9);
 	
 	
 	// This is how to measure execution times with SkePU
@@ -48,8 +49,8 @@ int main(int argc, const char* argv[])
 	
 	
 	/* Print vector for debugging */
-//	std::cout << "Input:  " << input << "\n";
-//	std::cout << "Result: " << res << "\n";
+	//std::cout << "Input:  " << input << "\n";
+	//std::cout << "Result: " << res << "\n";
 	
 	
 	return 0;
