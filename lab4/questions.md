@@ -5,7 +5,7 @@
 
 # Is the calculated square root identical to what the CPU calculates? Should we assume that this is always the case?
 - The square roots of floating point numbers in {x/2 : 0 <= x < 16} the cpu and gpu square roots are equal.
-- TODO: Assume
+- If different floating point precision is used on CPU and GPU, then the result could differ
 
 # How do you calculate the index in the array, using 2-dimensional blocks?
 - First we get our current blocks top-left coordinate using

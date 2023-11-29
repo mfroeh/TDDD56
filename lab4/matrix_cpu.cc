@@ -2,6 +2,8 @@
 // gcc matrix_cpu.c -o matrix_cpu -std=c99
 
 #include <stdio.h>
+#include <iostream>
+#include "milli.h"
 
 void add_matrix(float *a, float *b, float *c, int N)
 {
@@ -17,7 +19,7 @@ void add_matrix(float *a, float *b, float *c, int N)
 
 int main()
 {
-	const int N = 1024;
+	const int N = 64;
 
 	float* a = new float[N * N];
 	float* b = new float[N * N];
@@ -30,14 +32,17 @@ int main()
 			b[i+j*N] = (float)j / N;
 		}
 	
+	GetMicroseconds();
 	add_matrix(a, b, c, N);
+	int micro = GetMicroseconds();
+	std::cout << "Elapsed microseconds CPU: " << micro << std::endl;
 	
-	for (int i = 0; i < N; i++)
-	{
-		for (int j = 0; j < N; j++)
-		{
-			printf("%0.2f ", c[i+j*N]);
-		}
-		printf("\n");
-	}
+	// for (int i = 0; i < N; i++)
+	// {
+	// 	for (int j = 0; j < N; j++)
+	// 	{
+	// 		printf("%0.2f ", c[i+j*N]);
+	// 	}
+	// 	printf("\n");
+	// }
 }

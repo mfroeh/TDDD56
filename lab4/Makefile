@@ -1,14 +1,17 @@
 CC = nvcc
-CC_FLAGS = -std=c++20
+CC_FLAGS = -std=c++14
 
 simple: simple.cu
 	$(CC) $(CC_FLAGS) simple.cu -o simple
 
 maddgpu: matrix_gpu.cu
-	$(CC) $(CC_FLAGS) matrix_gpu.cu -o maddgpu
+	$(CC) $(CC_FLAGS) matrix_gpu.cu -o maddgpu 
 
 maddcpu: matrix_cpu.cc
-	g++ matrix_cpu.cc -o maddcpu -std=c++20
+	g++ matrix_cpu.cc milli.c -o maddcpu -std=c++14
+
+mandel: interactiveMandelbrot.cu
+	$(CC) $(CC_FLAGS) interactiveMandelbrot.cu -o mandel -lglut -lGL
 
 clean:
 	rm -f simple maddcpu maddgpu
