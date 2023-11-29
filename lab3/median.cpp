@@ -16,14 +16,34 @@
 
 #include "support.h"
 
-
 unsigned char median_kernel(skepu::Region2D<unsigned char> image, size_t elemPerPx)
 {
-	// your code here
-	return image(0,0);
+	int counts[256];
+	for (int i = 0; i < 256; ++i) {
+		counts[i] = 0;
+	}
+
+	// No data dependency, this is trivially parallelizable!
+	for (int y = -image.oi; y <= image.oi; ++y){
+		for (int x = -image.oj; x <= image.oj; x += elemPerPx){
+			counts[image(y, x)]++;
+		}
+	}
+
+	// Number of r|b|g values to find the median in
+	int n = (image.oi * 2 + 1) * (image.oj / elemPerPx * 2 + 1);
+
+	// Data dependency here, can't parallelize!
+	int acc = 0;
+	for (unsigned i = 0; i < 256; ++i) {
+		acc += counts[i];
+		if (acc >= ((n-1)/2)) {
+			return i;
+		}
+	}
+	// This should never happen, and if so we can observe that the image is black
+	return 0;
 }
-
-
 
 int main(int argc, char* argv[])
 {
@@ -39,6 +59,7 @@ int main(int argc, char* argv[])
 	std::string outputFileName = argv[2];
 	const int radius = atoi(argv[3]);
 	auto spec = skepu::BackendSpec{argv[4]};
+	// spec.setCPUThreads(16);
 	skepu::setGlobalBackendSpec(spec);
 	
 	// Create the full path for writing the image.
