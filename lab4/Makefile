@@ -11,7 +11,10 @@ maddcpu: matrix_cpu.cc
 	g++ matrix_cpu.cc milli.c -o maddcpu -std=c++14
 
 mandel: interactiveMandelbrot.cu
-	$(CC) $(CC_FLAGS) interactiveMandelbrot.cu -o mandel -lglut -lGL
+	$(CC) $(CC_FLAGS) -O3 interactiveMandelbrot.cu -o mandel -lglut -lGL
+
+mandelcpu: interactiveMandelbrot.cpp
+	g++ interactiveMandelbrot.cpp -o mandelcpu -lglut -lGL
 
 clean:
 	rm -f simple maddcpu maddgpu

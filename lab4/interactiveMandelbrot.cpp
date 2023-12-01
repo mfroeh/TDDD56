@@ -25,16 +25,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <iostream>
-
 // Image data
-unsigned char* pixels = NULL;
+unsigned char *pixels = NULL;
 int gImageWidth, gImageHeight;
 
 // Init image data
 void initBitmap(int width, int height) {
   if (pixels) free(pixels);
-  pixels = (unsigned char*)malloc(width * height * 4);
+  pixels = (unsigned char *)malloc(width * height * 4);
   gImageWidth = width;
   gImageHeight = height;
 }
@@ -42,10 +40,10 @@ void initBitmap(int width, int height) {
 #define DIM 512
 
 // Select precision here! float or double!
-#define MYFLOAT double
+#define MYFLOAT float
 
 // User controlled parameters
-int maxiter = 200;
+int maxiter = 20;
 MYFLOAT offsetx = -200, offsety = 0, zoom = 0;
 MYFLOAT scale = 1.5;
 
@@ -54,67 +52,45 @@ struct cuComplex {
   MYFLOAT r;
   MYFLOAT i;
 
-  __device__ cuComplex(MYFLOAT a, MYFLOAT b) : r(a), i(b) {}
+  cuComplex(MYFLOAT a, MYFLOAT b) : r(a), i(b) {}
 
-  __device__ float magnitude2(void) { return r * r + i * i; }
+  float magnitude2(void) { return r * r + i * i; }
 
-  __device__ cuComplex operator*(const cuComplex& a) {
+  cuComplex operator*(const cuComplex &a) {
     return cuComplex(r * a.r - i * a.i, i * a.r + r * a.i);
   }
 
-  __device__ cuComplex operator+(const cuComplex& a) {
+  cuComplex operator+(const cuComplex &a) {
     return cuComplex(r + a.r, i + a.i);
   }
 };
 
-__global__ void mandelbrot(int* iters, int gImageWidth, int gImageHeight,
-                           MYFLOAT offsetx, MYFLOAT offsety, MYFLOAT scale,
-                           int maxiter) {
-  unsigned x{blockIdx.x * blockDim.x + threadIdx.x};
-  unsigned y{blockIdx.y * blockDim.y + threadIdx.y};
-
-  MYFLOAT jx{scale *
-             (static_cast<MYFLOAT>(gImageWidth) / 2 - x + offsetx / scale) /
-             (static_cast<MYFLOAT>(gImageWidth) / 2)};
-  MYFLOAT jy{scale *
-             (static_cast<MYFLOAT>(gImageHeight) / 2 - y + offsety / scale) /
-             (static_cast<MYFLOAT>(gImageHeight) / 2)};
+int mandelbrot(int x, int y) {
+  MYFLOAT jx = scale * (MYFLOAT)(gImageWidth / 2 - x + offsetx / scale) /
+               (gImageWidth / 2);
+  MYFLOAT jy = scale * (MYFLOAT)(gImageHeight / 2 - y + offsety / scale) /
+               (gImageWidth / 2);
 
   cuComplex c(jx, jy);
   cuComplex a(jx, jy);
 
-  int i{};
-  for (; i < maxiter; i++) {
+  int i = 0;
+  for (i = 0; i < maxiter; i++) {
     a = a * a + c;
-    if (a.magnitude2() > 1000) {
-      break;
-    }
+    if (a.magnitude2() > 1000) return i;
   }
-  iters[y * gImageWidth + x] = i;
+
+  return i;
 }
 
-void computeFractal(unsigned char* ptr) {
-  int* iters_dev{};
-  cudaMalloc(&iters_dev, sizeof(int) * gImageWidth * gImageHeight);
-
-  dim3 block_dim{32, 32};
-  dim3 grid_dim(gImageWidth / 32, gImageHeight / 32);
-  mandelbrot<<<grid_dim, block_dim>>>(iters_dev, gImageWidth, gImageHeight,
-                                      offsetx, offsety, scale, maxiter);
-  cudaDeviceSynchronize();
-
-  int* iters = new int[gImageWidth * gImageHeight];
-  cudaMemcpy(iters, iters_dev, sizeof(int) * gImageWidth * gImageHeight,
-             cudaMemcpyDeviceToHost);
-
+void computeFractal(unsigned char *ptr) {
   // map from x, y to pixel position
-  for (int y = 0; y < gImageHeight; y++) {
-    for (int x = 0; x < gImageWidth; x++) {
+  for (int x = 0; x < gImageWidth; x++)
+    for (int y = 0; y < gImageHeight; y++) {
       int offset = x + y * gImageWidth;
 
       // now calculate the value at that position
-      // int fractalValue = mandelbrot( x, y);
-      int fractalValue = iters[y * gImageWidth + x];
+      int fractalValue = mandelbrot(x, y);
 
       // Colorize it
       int red = 255 * fractalValue / maxiter;
@@ -130,13 +106,12 @@ void computeFractal(unsigned char* ptr) {
 
       ptr[offset * 4 + 3] = 255;
     }
-  }
 }
 
 char print_help = 0;
 
 // Yuck, GLUT text is old junk that should be avoided... but it will have to do
-static void print_str(void* font, const char* string) {
+static void print_str(void *font, const char *string) {
   int i;
 
   for (i = 0; string[i]; i++) glutBitmapCharacter(font, string[i]);
@@ -255,11 +230,11 @@ void KeyboardProc(unsigned char key, int x, int y) {
 }
 
 // Main program, inits
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   glutInit(&argc, argv);
   glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA);
   glutInitWindowSize(DIM, DIM);
-  glutCreateWindow("Mandelbrot explorer (GPU)");
+  glutCreateWindow("Mandelbrot explorer (CPU)");
   glutDisplayFunc(Draw);
   glutMouseFunc(mouse_button);
   glutMotionFunc(mouse_motion);
