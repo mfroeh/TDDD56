@@ -36,6 +36,10 @@ struct pixel {
 // Use these for setting shared memory size.
 #define maxKernelSizeX 10
 #define maxKernelSizeY 10
+
+#define BLOCKX 32
+#define BLOCKY 32
+
 #define BLOCK_HEIGHT (maxKernelSizeX * 2 + 1)
 #define BLOCK_WIDTH (maxKernelSizeY * 2 + 1)
 
@@ -46,41 +50,41 @@ __global__ void filter(pixel *image, pixel *out, const unsigned int imagesizex,
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-  __shared__ pixel block[BLOCK_HEIGHT][BLOCK_WIDTH];
+  __shared__ pixel
+      block[BLOCKY + 2 * maxKernelSizeY][BLOCKX + 2 * maxKernelSizeX];
 
+  // For now every thread just copies all their pixel values
   for (int dy{-kernelsizey}, i{}; dy <= kernelsizey; ++dy, ++i) {
     for (int dx{-kernelsizex}, j{}; dx <= kernelsizex; ++dx, ++j) {
       int yy{min(max(y + dy, 0), static_cast<int>(imagesizey) - 1)};
       int xx{min(max(x + dx, 0), static_cast<int>(imagesizex) - 1)};
-      block[i][j] = image[yy * imagesizex + xx];
+      block[i + threadIdx.y][j + threadIdx.x] = image[yy * imagesizex + xx];
     }
   }
 
-  int dy, dx;
-  unsigned int sumx, sumy, sumz;
+  // Synch all threads in block
+  __syncthreads();
 
-  int divby = (2 * kernelsizex + 1) *
-              (2 * kernelsizey + 1);  // Works for box filters only!
+  // If inside image
+  if (x < imagesizex && y < imagesizey) {
+    int kernel_height{2 * kernelsizey + 1};
+    int kernel_width{2 * kernelsizex + 1};
 
-  if (x < imagesizex && y < imagesizey)  // If inside image
-  {
     // Filter kernel (simple box filter)
-    sumx = 0;
-    sumy = 0;
-    sumz = 0;
-    for (dy = -kernelsizey; dy <= kernelsizey; dy++)
-      for (dx = -kernelsizex; dx <= kernelsizex; dx++) {
-        // Use max and min to avoid branching!
-        int yy = min(max(y + dy, 0), imagesizey - 1);
-        int xx = min(max(x + dx, 0), imagesizex - 1);
-
-        sumx += image[((yy)*imagesizex + (xx))].r;
-        sumy += image[((yy)*imagesizex + (xx))].g;
-        sumz += image[((yy)*imagesizex + (xx))].b;
+    unsigned sumx{}, sumy{}, sumz{};
+    for (size_t i{}; i < kernel_height; ++i) {
+      for (size_t j{}; j < kernel_width; ++j) {
+        sumx += block[i + threadIdx.y][j + threadIdx.x].r;
+        sumy += block[i + threadIdx.y][j + threadIdx.x].g;
+        sumz += block[i + threadIdx.y][j + threadIdx.x].b;
       }
-    out[(y * imagesizex + x)].r = sumx / divby;
-    out[(y * imagesizex + x)].g = sumy / divby;
-    out[(y * imagesizex + x)].b = sumz / divby;
+    }
+
+    // Works for box filters only!
+    int divby{(2 * kernelsizex + 1) * (2 * kernelsizey + 1)};
+    out[y * imagesizex + x].r = sumx / divby;
+    out[y * imagesizex + x].g = sumy / divby;
+    out[y * imagesizex + x].b = sumz / divby;
   } else {
     printf("%d,%d is outside imagesize!", x, y);
   }
@@ -106,8 +110,8 @@ void computeImages(int kernelsizex, int kernelsizey) {
              cudaMemcpyHostToDevice);
   cudaMalloc((void **)&dev_bitmap, imagesizex * imagesizey * 3);
 
-  dim3 grid_dim{imagesizex, imagesizey};
-  dim3 block_dim{1, 1};
+  dim3 block_dim{BLOCKX, BLOCKY};
+  dim3 grid_dim{imagesizex / block_dim.x, imagesizey / block_dim.y};
   filter<<<grid_dim, block_dim>>>(dev_input, dev_bitmap, imagesizex, imagesizey,
                                   kernelsizex,
                                   kernelsizey);  // Awful load balance
@@ -162,7 +166,7 @@ int main(int argc, char **argv) {
 
   ResetMilli();
 
-  computeImages(2, 2);
+  computeImages(10, 10);
 
   // You can save the result to a file like this:
   //	writeppm("out.ppm", imagesizey, imagesizex, pixels);
