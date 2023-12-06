@@ -14,7 +14,7 @@ mandel: interactiveMandelbrot.cu
 	$(CC) $(CC_FLAGS) -O3 interactiveMandelbrot.cu -o mandel -lglut -lGL
 
 mandelcpu: interactiveMandelbrot.cpp
-	g++ interactiveMandelbrot.cpp -o mandelcpu -lglut -lGL
+	g++ interactiveMandelbrot.cpp milli.c -o mandelcpu -lglut -lGL
 
 clean:
 	rm -f simple maddcpu maddgpu

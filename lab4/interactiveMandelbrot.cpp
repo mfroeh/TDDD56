@@ -24,6 +24,8 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <iostream>
+#include "milli.h"
 
 // Image data
 unsigned char *pixels = NULL;
@@ -37,13 +39,13 @@ void initBitmap(int width, int height) {
   gImageHeight = height;
 }
 
-#define DIM 512
+#define DIM 1024
 
 // Select precision here! float or double!
-#define MYFLOAT float
+#define MYFLOAT double
 
 // User controlled parameters
-int maxiter = 20;
+int maxiter = 200;
 MYFLOAT offsetx = -200, offsety = 0, zoom = 0;
 MYFLOAT scale = 1.5;
 
@@ -84,6 +86,8 @@ int mandelbrot(int x, int y) {
 }
 
 void computeFractal(unsigned char *ptr) {
+  GetMicroseconds();
+	
   // map from x, y to pixel position
   for (int x = 0; x < gImageWidth; x++)
     for (int y = 0; y < gImageHeight; y++) {
@@ -106,6 +110,9 @@ void computeFractal(unsigned char *ptr) {
 
       ptr[offset * 4 + 3] = 255;
     }
+
+    int micro = GetMicroseconds();
+	  std::cout << "Elapsed microseconds CPU: " << micro << std::endl;
 }
 
 char print_help = 0;

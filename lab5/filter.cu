@@ -28,17 +28,18 @@
 #endif
 #include "milli.h"
 #include "readppm.h"
+#include <iostream>
 
 struct pixel {
-  unsigned char r{}, g{}, b{};
+  unsigned char r, g, b;
 };
 
 // Use these for setting shared memory size.
 #define maxKernelSizeX 10
 #define maxKernelSizeY 10
 
-#define BLOCKX 2
-#define BLOCKY 2
+#define BLOCKX 32
+#define BLOCKY 32
 
 #define BLOCK_HEIGHT (maxKernelSizeX * 2 + 1)
 #define BLOCK_WIDTH (maxKernelSizeY * 2 + 1)
@@ -67,8 +68,8 @@ __global__ void box(pixel *image, pixel *out, const unsigned int imagesizex,
   int firsty = blockIdx.y * blockDim.y;
   int firstx = blockIdx.x * blockDim.x;
 
-  for (int i{starty}; i <= endy; ++i) {
-    for (int j{startx}; j <= endx; ++j) {
+  for (int i{starty}; i < endy; ++i) {
+    for (int j{startx}; j < endx; ++j) {
       int imgy{-kernelsizey + i + firsty};
       int imgx{-kernelsizex + j + firstx};
       int yy{min(max(imgy, 0), static_cast<int>(imagesizey) - 1)};
@@ -130,8 +131,8 @@ __global__ void gaussian(pixel *image, pixel *out,
   int firsty = blockIdx.y * blockDim.y;
   int firstx = blockIdx.x * blockDim.x;
 
-  for (int i{starty}; i <= endy; ++i) {
-    for (int j{startx}; j <= endx; ++j) {
+  for (int i{starty}; i < endy; ++i) {
+    for (int j{startx}; j < endx; ++j) {
       int imgy{-kernelsizey + i + firsty};
       int imgx{-kernelsizex + j + firstx};
       int yy{min(max(imgy, 0), static_cast<int>(imagesizey) - 1)};
@@ -197,8 +198,8 @@ __global__ void median(pixel *image, pixel *out, const unsigned int imagesizex,
   int firsty = blockIdx.y * blockDim.y;
   int firstx = blockIdx.x * blockDim.x;
 
-  for (int i{starty}; i <= endy; ++i) {
-    for (int j{startx}; j <= endx; ++j) {
+  for (int i{starty}; i < endy; ++i) {
+    for (int j{startx}; j < endx; ++j) {
       int imgy{-kernelsizey + i + firsty};
       int imgx{-kernelsizex + j + firstx};
       int yy{min(max(imgy, 0), static_cast<int>(imagesizey) - 1)};
@@ -274,6 +275,10 @@ void computeImages(int kernelsizex, int kernelsizey, bool seperate,
   dim3 block_dim{BLOCKX, BLOCKY};
   dim3 grid_dim{imagesizex / block_dim.x, imagesizey / block_dim.y};
 
+  cudaEvent_t start, end;
+  cudaEventCreate(&start);
+  cudaEventCreate(&end);
+  cudaEventRecord(start, 0);
   if (ft == Box) {
     box<<<grid_dim, block_dim>>>(dev_input, dev_bitmap, imagesizex, imagesizey,
                                  kernelsizex, seperate ? 0 : kernelsizey);
@@ -317,6 +322,12 @@ void computeImages(int kernelsizex, int kernelsizey, bool seperate,
     cudaMemcpy(pixels, dev_bitmap, imagesizey * imagesizex * 3,
                cudaMemcpyDeviceToHost);
   }
+  cudaEventRecord(end, 0);
+  cudaEventSynchronize(end);
+  
+  float elapsed;
+  cudaEventElapsedTime(&elapsed, start, end);
+  std::cout << "Elapsed GPU: " << elapsed << std::endl;
 
   cudaFree(dev_bitmap);
   cudaFree(dev_input);
@@ -364,9 +375,12 @@ int main(int argc, char **argv) {
 
   ResetMilli();
 
-  // computeImages(10, 10, false);
-  // computeImages(2, 2, true, Gaussian);
-  // computeImages(5, 5, true, Median);
+  // computeImages(10, 10, false, Box);
+  // computeImages(10, 10, true, Box);
+  
+  // computeImages(2, 2, false, Box);
+  // computeImages(2, 2, false, Gaussian);
+  computeImages(10, 10, false, Median);
 
   // You can save the result to a file like this:
   //	writeppm("out.ppm", imagesizey, imagesizex, pixels);

@@ -39,10 +39,10 @@ void initBitmap(int width, int height) {
   gImageHeight = height;
 }
 
-#define DIM 512
+#define DIM 1024
 
 // Select precision here! float or double!
-#define MYFLOAT double
+#define MYFLOAT float
 
 // User controlled parameters
 int maxiter = 200;
@@ -97,11 +97,22 @@ void computeFractal(unsigned char* ptr) {
   int* iters_dev{};
   cudaMalloc(&iters_dev, sizeof(int) * gImageWidth * gImageHeight);
 
+  cudaEvent_t start, end;
+  cudaEventCreate(&start);
+  cudaEventCreate(&end);
+  cudaEventRecord(start, 0);
+
   dim3 block_dim{32, 32};
   dim3 grid_dim(gImageWidth / 32, gImageHeight / 32);
   mandelbrot<<<grid_dim, block_dim>>>(iters_dev, gImageWidth, gImageHeight,
                                       offsetx, offsety, scale, maxiter);
   cudaDeviceSynchronize();
+  cudaEventRecord(end, 0);
+  cudaEventSynchronize(end);
+  
+  float elapsed;
+  cudaEventElapsedTime(&elapsed, start, end);
+  std::cout << "Elapsed GPU: " << elapsed << std::endl;
 
   int* iters = new int[gImageWidth * gImageHeight];
   cudaMemcpy(iters, iters_dev, sizeof(int) * gImageWidth * gImageHeight,
