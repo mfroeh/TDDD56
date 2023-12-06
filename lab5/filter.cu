@@ -37,8 +37,8 @@ struct pixel {
 #define maxKernelSizeX 10
 #define maxKernelSizeY 10
 
-#define BLOCKX 32
-#define BLOCKY 32
+#define BLOCKX 2
+#define BLOCKY 2
 
 #define BLOCK_HEIGHT (maxKernelSizeX * 2 + 1)
 #define BLOCK_WIDTH (maxKernelSizeY * 2 + 1)
@@ -46,24 +46,43 @@ struct pixel {
 __global__ void filter(pixel *image, pixel *out, const unsigned int imagesizex,
                        const unsigned int imagesizey, const int kernelsizex,
                        const int kernelsizey) {
-  // map from blockIdx to pixel position
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-
   __shared__ pixel
       block[BLOCKY + 2 * maxKernelSizeY][BLOCKX + 2 * maxKernelSizeX];
 
-  // For now every thread just copies all their pixel values
-  for (int dy{-kernelsizey}, i{}; dy <= kernelsizey; ++dy, ++i) {
-    for (int dx{-kernelsizex}, j{}; dx <= kernelsizex; ++dx, ++j) {
-      int yy{min(max(y + dy, 0), static_cast<int>(imagesizey) - 1)};
-      int xx{min(max(x + dx, 0), static_cast<int>(imagesizex) - 1)};
-      block[i + threadIdx.y][j + threadIdx.x] = image[yy * imagesizex + xx];
+  // How many pixels we will need for the filter in our block
+  int width{BLOCKX + 2 * kernelsizex};
+  int height{BLOCKY + 2 * kernelsizey};
+
+  int chunksizey{height / BLOCKY};
+  int starty{static_cast<int>(threadIdx.y) * chunksizey};
+  int endy{starty + chunksizey};
+  if (threadIdx.y == BLOCKY - 1) endy += height % BLOCKY;
+
+  int chunksizex{width / BLOCKX};
+  int startx{static_cast<int>(threadIdx.x) * chunksizex};
+  int endx{startx + chunksizex};
+  if (threadIdx.x == BLOCKX - 1) endx += width % BLOCKX;
+
+  // The top left corner of our block in the image
+  int firsty = blockIdx.y * blockDim.y;
+  int firstx = blockIdx.x * blockDim.x;
+
+  for (int i{starty}; i <= endy; ++i) {
+    for (int j{startx}; j <= endx; ++j) {
+      int imgy{-kernelsizey + i + firsty};
+      int imgx{-kernelsizex + j + firstx};
+      int yy{min(max(imgy, 0), static_cast<int>(imagesizey) - 1)};
+      int xx{min(max(imgx, 0), static_cast<int>(imagesizex) - 1)};
+      block[i][j] = image[yy * imagesizex + xx];
     }
   }
 
   // Synch all threads in block
   __syncthreads();
+
+  // map from blockIdx to pixel position
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
 
   // If inside image
   if (x < imagesizex && y < imagesizey) {
@@ -74,9 +93,10 @@ __global__ void filter(pixel *image, pixel *out, const unsigned int imagesizex,
     unsigned sumx{}, sumy{}, sumz{};
     for (size_t i{}; i < kernel_height; ++i) {
       for (size_t j{}; j < kernel_width; ++j) {
-        sumx += block[i + threadIdx.y][j + threadIdx.x].r;
-        sumy += block[i + threadIdx.y][j + threadIdx.x].g;
-        sumz += block[i + threadIdx.y][j + threadIdx.x].b;
+        pixel p{block[i + threadIdx.y][j + threadIdx.x]};
+        sumx += p.r;
+        sumy += p.g;
+        sumz += p.b;
       }
     }
 
@@ -92,23 +112,24 @@ __global__ void filter(pixel *image, pixel *out, const unsigned int imagesizex,
 
 // Global variables for image data
 pixel *dev_input, *dev_bitmap;
-unsigned char *image, *pixels;
+pixel *image, *pixels;
+// unsigned char *image, *pixels;
 unsigned int imagesizey, imagesizex;  // Image size
 
 ////////////////////////////////////////////////////////////////////////////////
 // main computation function
 ////////////////////////////////////////////////////////////////////////////////
-void computeImages(int kernelsizex, int kernelsizey) {
+void computeImages(int kernelsizex, int kernelsizey, bool seperate) {
   if (kernelsizex > maxKernelSizeX || kernelsizey > maxKernelSizeY) {
     printf("Kernel size out of bounds!\n");
     return;
   }
 
-  pixels = (unsigned char *)malloc(imagesizex * imagesizey * 3);
-  cudaMalloc((void **)&dev_input, imagesizex * imagesizey * 3);
+  pixels = new pixel[imagesizex * imagesizey];
+  cudaMalloc(&dev_input, imagesizex * imagesizey * 3);
   cudaMemcpy(dev_input, image, imagesizey * imagesizex * 3,
              cudaMemcpyHostToDevice);
-  cudaMalloc((void **)&dev_bitmap, imagesizex * imagesizey * 3);
+  cudaMalloc(&dev_bitmap, imagesizex * imagesizey * 3);
 
   dim3 block_dim{BLOCKX, BLOCKY};
   dim3 grid_dim{imagesizex / block_dim.x, imagesizey / block_dim.y};
@@ -152,10 +173,11 @@ int main(int argc, char **argv) {
   glutInitDisplayMode(GLUT_SINGLE | GLUT_RGBA);
 
   if (argc > 1)
-    image = readppm(argv[1], (int *)&imagesizex, (int *)&imagesizey);
+    image = reinterpret_cast<pixel *>(
+        readppm(argv[1], (int *)&imagesizex, (int *)&imagesizey));
   else
-    image = readppm((char *)"maskros512.ppm", (int *)&imagesizex,
-                    (int *)&imagesizey);
+    image = reinterpret_cast<pixel *>(readppm(
+        (char *)"maskros512.ppm", (int *)&imagesizex, (int *)&imagesizey));
 
   if (imagesizey >= imagesizex)
     glutInitWindowSize(imagesizex * 2, imagesizey);
@@ -166,7 +188,8 @@ int main(int argc, char **argv) {
 
   ResetMilli();
 
-  computeImages(10, 10);
+  computeImages(10, 10, false);
+  computeImages(10, 10, true);
 
   // You can save the result to a file like this:
   //	writeppm("out.ppm", imagesizey, imagesizex, pixels);
