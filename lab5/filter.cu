@@ -173,6 +173,77 @@ __global__ void gaussian(pixel *image, pixel *out,
   out[y * imagesizex + x].b = static_cast<float>(sumz) / divby;
 }
 
+__global__ void median(pixel *image, pixel *out, const unsigned int imagesizex,
+                       const unsigned int imagesizey, const int kernelsizex,
+                       const int kernelsizey) {
+  __shared__ pixel
+      block[BLOCKY + 2 * maxKernelSizeY][BLOCKX + 2 * maxKernelSizeX];
+
+  // How many pixels we will need for the filter in our block
+  int width{BLOCKX + 2 * kernelsizex};
+  int height{BLOCKY + 2 * kernelsizey};
+
+  int chunksizey{height / BLOCKY};
+  int starty{static_cast<int>(threadIdx.y) * chunksizey};
+  int endy{starty + chunksizey};
+  if (threadIdx.y == BLOCKY - 1) endy += height % BLOCKY;
+
+  int chunksizex{width / BLOCKX};
+  int startx{static_cast<int>(threadIdx.x) * chunksizex};
+  int endx{startx + chunksizex};
+  if (threadIdx.x == BLOCKX - 1) endx += width % BLOCKX;
+
+  // The top left corner of our block in the image
+  int firsty = blockIdx.y * blockDim.y;
+  int firstx = blockIdx.x * blockDim.x;
+
+  for (int i{starty}; i <= endy; ++i) {
+    for (int j{startx}; j <= endx; ++j) {
+      int imgy{-kernelsizey + i + firsty};
+      int imgx{-kernelsizex + j + firstx};
+      int yy{min(max(imgy, 0), static_cast<int>(imagesizey) - 1)};
+      int xx{min(max(imgx, 0), static_cast<int>(imagesizex) - 1)};
+      block[i][j] = image[yy * imagesizex + xx];
+    }
+  }
+
+  // Synch all threads in block
+  __syncthreads();
+
+  int kernel_height{2 * kernelsizey + 1};
+  int kernel_width{2 * kernelsizex + 1};
+
+  int counts[3][256]{};
+  for (size_t i{}; i < kernel_height; ++i) {
+    for (size_t j{}; j < kernel_width; ++j) {
+      pixel p{block[i + threadIdx.y][j + threadIdx.x]};
+      counts[0][p.r]++;
+      counts[1][p.g]++;
+      counts[2][p.b]++;
+    }
+  }
+
+  unsigned char med[3]{255, 255, 255};
+  for (size_t i{}; i < 3; ++i) {
+    int acc{};
+    for (size_t j{}; j < 256; ++j) {
+      acc += counts[i][j];
+      if (acc >= (kernel_width * kernel_height - 1) / 2) {
+        med[i] = j;
+        break;
+      }
+    }
+  }
+
+  // map from blockIdx to pixel position
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+  out[y * imagesizex + x].r = med[0];
+  out[y * imagesizex + x].g = med[1];
+  out[y * imagesizex + x].b = med[2];
+}
+
 // Global variables for image data
 pixel *dev_input, *dev_bitmap;
 pixel *image, *pixels;
@@ -210,6 +281,10 @@ void computeImages(int kernelsizex, int kernelsizey, bool seperate,
     gaussian<<<grid_dim, block_dim>>>(dev_input, dev_bitmap, imagesizex,
                                       imagesizey, kernelsizex,
                                       seperate ? 0 : kernelsizey);
+  } else if (ft == Median) {
+    median<<<grid_dim, block_dim>>>(dev_input, dev_bitmap, imagesizex,
+                                    imagesizey, kernelsizex,
+                                    seperate ? 0 : kernelsizey);
   }
   cudaDeviceSynchronize();
 
@@ -230,6 +305,10 @@ void computeImages(int kernelsizex, int kernelsizey, bool seperate,
       gaussian<<<grid_dim, block_dim>>>(dev_input, dev_bitmap, imagesizex,
                                         imagesizey, kernelsizex,
                                         seperate ? 0 : kernelsizey);
+    } else if (ft == Median) {
+      median<<<grid_dim, block_dim>>>(dev_input, dev_bitmap, imagesizex,
+                                      imagesizey, kernelsizex,
+                                      seperate ? 0 : kernelsizey);
     }
     cudaDeviceSynchronize();
 
@@ -286,7 +365,8 @@ int main(int argc, char **argv) {
   ResetMilli();
 
   // computeImages(10, 10, false);
-  computeImages(2, 2, true, Gaussian);
+  // computeImages(2, 2, true, Gaussian);
+  // computeImages(5, 5, true, Median);
 
   // You can save the result to a file like this:
   //	writeppm("out.ppm", imagesizey, imagesizex, pixels);
