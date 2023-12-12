@@ -6,7 +6,6 @@ __kernel void find_max(__global unsigned int *data, const unsigned int length)
 { 
   unsigned int gid = get_global_id(0);
   unsigned int lid = get_local_id(0);
-  printf("LID: %d GID:%d \n", lid, gid);
 
   __local unsigned local_mem[256];
   local_mem[lid] = data[gid];
@@ -26,18 +25,20 @@ __kernel void find_max(__global unsigned int *data, const unsigned int length)
     }
 
     if (lid == 0){
+      //printf("GID: %d \n", gid);
       data[gid] = local_mem[0];
     }
 
     barrier(CLK_GLOBAL_MEM_FENCE);
 
     if(gid == 0){
-
       unsigned maximum = data[0];
 
-      for(unsigned int i = 1; i < gsize; i += lsize)
+      for(unsigned int i = 0; i < gsize; i += lsize)
       {
-        maximum = max(maximum, data[i]);
+        printf("I: %d \n", i);
+        if(maximum < data[i])
+          maximum = data[i];
       }
 
       data[0] = maximum;
