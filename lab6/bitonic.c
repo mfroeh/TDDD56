@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <math.h>
 #ifdef __APPLE__
 #include <GLUT/glut.h>
 #include <OpenCL/opencl.h>
@@ -26,10 +27,11 @@
 #include "milli.h"
 
 // Size of data!
-#define kDataLength 32
+#define kDataLength 1024 * 1024
 #define MAXPRINTSIZE 16
 
-unsigned int *generateRandomData(unsigned int length) {
+unsigned int *generateRandomData(unsigned int length)
+{
   unsigned int seed;
   struct timeval t_s;
   gettimeofday(&t_s, NULL);
@@ -39,12 +41,14 @@ unsigned int *generateRandomData(unsigned int length) {
   unsigned int *data, i;
 
   data = (unsigned int *)malloc(length * sizeof(unsigned int));
-  if (!data) {
+  if (!data)
+  {
     printf("\nerror allocating data.\n\n");
     return NULL;
   }
   srand(seed);
-  for (i = 0; i < length; i++) data[i] = (unsigned int)(rand() % length);
+  for (i = 0; i < length; i++)
+    data[i] = (unsigned int)(rand() % length);
   printf("generateRandomData done.\n\n");
   return data;
 }
@@ -55,7 +59,8 @@ unsigned int *generateRandomData(unsigned int length) {
 // Only ONE array of data.
 // __kernel void sort(__global unsigned int *data, const unsigned int length)
 void runKernel(cl_kernel kernel, int threads, cl_mem data,
-               unsigned int length) {
+               unsigned int length, unsigned k, unsigned j)
+{
   size_t localWorkSize, globalWorkSize;
   cl_int ciErrNum = CL_SUCCESS;
 
@@ -66,13 +71,10 @@ void runKernel(cl_kernel kernel, int threads, cl_mem data,
     localWorkSize = 1024;
   globalWorkSize = threads;
 
-  // TODO: Single threaded
-  localWorkSize = 1;
-  globalWorkSize = 1;
-
-  // set the args values
-  ciErrNum = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&data);
-  ciErrNum |= clSetKernelArg(kernel, 1, sizeof(cl_uint), (void *)&length);
+  // set the kernel params
+  ciErrNum = clSetKernelArg(kernel, 0, sizeof(cl_mem), &data);
+  ciErrNum |= clSetKernelArg(kernel, 1, sizeof(cl_uint), &k);
+  ciErrNum |= clSetKernelArg(kernel, 2, sizeof(cl_uint), &j);
   printCLError(ciErrNum, 8);
 
   // Run kernel
@@ -89,7 +91,8 @@ void runKernel(cl_kernel kernel, int threads, cl_mem data,
 
 static cl_kernel gpgpuSort;
 
-int bitonic_gpu(unsigned int *data, unsigned int length) {
+int bitonic_gpu(unsigned int *data, unsigned int length)
+{
   cl_int ciErrNum = CL_SUCCESS;
   size_t localWorkSize, globalWorkSize;
   cl_mem io_data;
@@ -100,8 +103,15 @@ int bitonic_gpu(unsigned int *data, unsigned int length) {
                      length * sizeof(unsigned int), data, &ciErrNum);
   printCLError(ciErrNum, 7);
 
+  ResetMilli();
   // ********** RUN THE KERNEL ************
-  runKernel(gpgpuSort, length, io_data, length);
+  for (unsigned k = 2; k <= length; k = 2 * k)
+  {
+    for (unsigned j = k >> 1; j > 0; j = j >> 1)
+    {
+      runKernel(gpgpuSort, length, io_data, length, k, j);
+    }
+  }
 
   // Get data
   cl_event event;
@@ -119,26 +129,29 @@ int bitonic_gpu(unsigned int *data, unsigned int length) {
 
 // ------------ CPU ------------
 
-static void exchange(unsigned int *i, unsigned int *j) {
+static void exchange(unsigned int *i, unsigned int *j)
+{
   int k;
   k = *i;
   *i = *j;
   *j = k;
 }
 
-void bitonic_cpu(unsigned int *data, int N) {
+void bitonic_cpu(unsigned int *data, int N)
+{
   unsigned int i, j, k;
 
   printf("CPU sorting.\n");
 
-  for (k = 2; k <= N; k = 2 * k)  // Outer loop, double size for each step
+  for (k = 2; k <= N; k = 2 * k) // Outer loop, double size for each step
   {
-    for (j = k >> 1; j > 0; j = j >> 1)  // Inner loop, half size for each step
+    for (j = k >> 1; j > 0; j = j >> 1) // Inner loop, half size for each step
     {
-      for (i = 0; i < N; i++)  // Loop over data
+      for (i = 0; i < N; i++) // Loop over data
       {
-        int ixj = i ^ j;  // Calculate indexing!
-        if ((ixj) > i) {
+        int ixj = i ^ j; // Calculate indexing!
+        if ((ixj) > i)
+        {
           if ((i & k) == 0 && data[i] > data[ixj])
             exchange(&data[i], &data[ixj]);
           if ((i & k) != 0 && data[i] < data[ixj])
@@ -151,15 +164,17 @@ void bitonic_cpu(unsigned int *data, int N) {
 
 // ------------ main ------------
 
-int main(int argc, char **argv) {
-  int length = kDataLength;  // SIZE OF DATA
+int main(int argc, char **argv)
+{
+  int length = kDataLength; // SIZE OF DATA
   unsigned short int header[2];
 
   // Computed data
   unsigned int *data_cpu, *data_gpu;
 
   // Find a platform and device
-  if (initOpenCL() < 0) {
+  if (initOpenCL() < 0)
+  {
     closeOpenCL();
     return 1;
   }
@@ -169,35 +184,38 @@ int main(int argc, char **argv) {
   data_cpu = generateRandomData(length);
   data_gpu = (unsigned int *)malloc(length * sizeof(unsigned int));
 
-  if ((!data_cpu) || (!data_gpu)) {
+  if ((!data_cpu) || (!data_gpu))
+  {
     printf("\nError allocating data.\n\n");
     return 1;
   }
 
   // Copy to gpu data.
-  for (int i = 0; i < length; i++) data_gpu[i] = data_cpu[i];
+  for (int i = 0; i < length; i++)
+    data_gpu[i] = data_cpu[i];
 
   ResetMilli();
   bitonic_cpu(data_cpu, length);
   printf("CPU %f\n", GetSeconds());
 
-  ResetMilli();  // You may consider moving this inside bitonic_gpu(), to skip
-                 // timing of data allocation.
   bitonic_gpu(data_gpu, length);
   printf("GPU %f\n", GetSeconds());
 
   // Print part of result
-  for (int i = 0; i < MAXPRINTSIZE; i++) printf("%d ", data_gpu[i]);
+  for (int i = 0; i < MAXPRINTSIZE; i++)
+    printf("%d ", data_gpu[i]);
   printf("\n");
 
   for (int i = 0; i < length; i++)
-    if (data_cpu[i] != data_gpu[i]) {
+    if (data_cpu[i] != data_gpu[i])
+    {
       printf("Wrong value at position %d.\n", i);
       closeOpenCL();
       return (1);
     }
   printf("\nYour sorting looks correct!\n");
   closeOpenCL();
-  if (gpgpuSort) clReleaseKernel(gpgpuSort);
+  if (gpgpuSort)
+    clReleaseKernel(gpgpuSort);
   return 0;
 }
