@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <math.h>
 #define CL_TARGET_OPENCL_VERSION 220
 #ifdef __APPLE__
 #include <GLUT/glut.h>
@@ -28,10 +29,11 @@
 #include "milli.h"
 
 // Size of data!
-#define kDataLength 1024 * 1024 * 16
+#define kDataLength 1024 * 1024 * 64
 #define MAXPRINTSIZE 16
 
-unsigned int *generateRandomData(unsigned int length) {
+unsigned int *generateRandomData(unsigned int length)
+{
   unsigned int seed;
   struct timeval t_s;
   gettimeofday(&t_s, NULL);
@@ -41,12 +43,14 @@ unsigned int *generateRandomData(unsigned int length) {
   unsigned int *data, i;
 
   data = (unsigned int *)malloc(length * sizeof(unsigned int));
-  if (!data) {
+  if (!data)
+  {
     printf("\nerror allocating data.\n\n");
     return NULL;
   }
   srand(seed);
-  for (i = 0; i < length; i++) data[i] = (unsigned int)(rand() % length);
+  for (i = 0; i < length; i++)
+    data[i] = (unsigned int)(rand() % length);
   printf("generateRandomData done.\n\n");
   return data;
 }
@@ -57,7 +61,8 @@ unsigned int *generateRandomData(unsigned int length) {
 // Only ONE array of data.
 // __kernel void sort(__global unsigned int *data, const unsigned int length)
 void runKernel(cl_kernel kernel, int threads, cl_mem data,
-               unsigned int length) {
+               unsigned int length)
+{
   size_t localWorkSize, globalWorkSize;
   cl_int ciErrNum = CL_SUCCESS;
 
@@ -66,7 +71,6 @@ void runKernel(cl_kernel kernel, int threads, cl_mem data,
     localWorkSize = threads;
   else
     localWorkSize = 1024;
-
   globalWorkSize = threads;
 
   // set the args values
@@ -88,7 +92,8 @@ void runKernel(cl_kernel kernel, int threads, cl_mem data,
 
 static cl_kernel gpgpuReduction;
 
-int find_max_gpu(unsigned int *data, unsigned int length) {
+int find_max_gpu(unsigned int *data, unsigned int length)
+{
   cl_int ciErrNum = CL_SUCCESS;
   size_t localWorkSize, globalWorkSize;
   cl_mem io_data;
@@ -101,7 +106,7 @@ int find_max_gpu(unsigned int *data, unsigned int length) {
 
   ResetMilli();
   // ********** RUN THE KERNEL ************
-  runKernel(gpgpuReduction, length / 2, io_data, length);
+  runKernel(gpgpuReduction, length, io_data, length);
 
   // Get data
   cl_event event;
@@ -114,31 +119,43 @@ int find_max_gpu(unsigned int *data, unsigned int length) {
   printCLError(ciErrNum, 10);
 
   clReleaseMemObject(io_data);
+
+  size_t localMaxima = length < 1024 ? 1 : length / 1024;
+  unsigned maximum = 0;
+  for (size_t i = 0; i < localMaxima; ++i) {
+    if (data[i] > maximum) maximum = data[i];
+  }
+  data[0] = maximum;
+
   return ciErrNum;
 }
 
 // CPU max finder (sequential)
-void find_max_cpu(unsigned int *data, int N) {
+void find_max_cpu(unsigned int *data, int N)
+{
   unsigned int i, m;
 
   m = data[0];
-  for (i = 0; i < N; i++)  // Loop over data
+  for (i = 0; i < N; i++) // Loop over data
   {
-    if (data[i] > m) m = data[i];
+    if (data[i] > m)
+      m = data[i];
   }
   data[0] = m;
 }
 // ------------ main ------------
 
-int main(int argc, char **argv) {
-  int length = kDataLength;  // SIZE OF DATA
+int main(int argc, char **argv)
+{
+  int length = kDataLength; // SIZE OF DATA
   unsigned short int header[2];
 
   // Computed data
   unsigned int *data_cpu, *data_gpu;
 
   // Find a platform and device
-  if (initOpenCL() < 0) {
+  if (initOpenCL() < 0)
+  {
     closeOpenCL();
     return 1;
   }
@@ -148,13 +165,15 @@ int main(int argc, char **argv) {
   data_cpu = generateRandomData(length);
   data_gpu = (unsigned int *)malloc(length * sizeof(unsigned int));
 
-  if ((!data_cpu) || (!data_gpu)) {
+  if ((!data_cpu) || (!data_gpu))
+  {
     printf("\nError allocating data.\n\n");
     return 1;
   }
 
   // Copy to gpu data.
-  for (int i = 0; i < length; i++) data_gpu[i] = data_cpu[i];
+  for (int i = 0; i < length; i++)
+    data_gpu[i] = data_cpu[i];
 
   ResetMilli();
   find_max_cpu(data_cpu, length);
@@ -166,10 +185,12 @@ int main(int argc, char **argv) {
   printf("GPU %f\n", GetSeconds());
 
   // Print part of result
-  for (int i = 0; i < MAXPRINTSIZE; i++) printf("%d ", data_gpu[i]);
+  for (int i = 0; i < MAXPRINTSIZE; i++)
+    printf("%d ", data_gpu[i]);
   printf("\n");
 
-  if (data_cpu[0] != data_gpu[0]) {
+  if (data_cpu[0] != data_gpu[0])
+  {
     printf("Wrong value at position 0.\n");
     printf("CPU %d \n", data_cpu[0]);
     printf("GPU %d \n", data_gpu[0]);
@@ -178,6 +199,7 @@ int main(int argc, char **argv) {
   }
   printf("\nYour max looks correct!\n");
   closeOpenCL();
-  if (gpgpuReduction) clReleaseKernel(gpgpuReduction);
+  if (gpgpuReduction)
+    clReleaseKernel(gpgpuReduction);
   return 0;
 }
